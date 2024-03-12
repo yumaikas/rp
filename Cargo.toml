@@ -1,0 +1,9 @@
+[package]
+name = "rp_calc"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+rust_decimal = { version =  "1.34", features = ["maths", "std", "rand"] }
+rust_decimal_macros = "1.34"
+

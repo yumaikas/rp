@@ -336,6 +336,7 @@ dependencies = [
 name = "rp_calc"
 version = "0.0.1"
 dependencies = [
+ "num-traits",
  "rust_decimal",
  "rust_decimal_macros",
 ]

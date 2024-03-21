@@ -32,6 +32,7 @@ fn print_value(v: &Value) {
     }
 }
 
+#[derive(Debug)]
 enum Mode {
     Integer,
     Decimal,
@@ -52,9 +53,22 @@ fn err_msg(msg: String) -> Exit {
     Exit::WithMessage(msg)
 }
 
+fn baseline_regsiters() -> HashMap<String, Value> {
+    let kvs = [
+        ("F->C", "1! 32- 5 9/*"),
+        ("C->F", "1! 9 5/* 32+"),
+        ("C->K", "1! 273+"),
+        ("K->C", "1! 273-"),
+        ("Km->mi", "1! 1.609344/"),
+        ("mi->Km", "1! 1.609344*"),
+    ].map(|kv: (&str, &str)| (String::from(kv.0), Value::Str(kv.1.into())));
+    HashMap::from(kvs)
+}
+
+
 fn main() {
     let mut state = RPState {
-        registers: HashMap::new(),
+        registers: baseline_regsiters(),
         stack: Vec::new(),
         mode: Mode::CommandChar,
         wip_str: String::from(""),
@@ -63,6 +77,7 @@ fn main() {
         reg_command: String::from(""), 
         eat_count: 0,
         num: dec!(0.0),
+        is_num_negative: false,
         decimal_offset: dec!(1),
     };
     let stdin = io::stdin();
@@ -91,6 +106,10 @@ fn to_decimal(input: u32) -> Decimal {
     <u32 as Into<Decimal>>::into(input)
 }
 
+fn usize_to_decimal(input: usize) -> Decimal {
+    <usize as Into<Decimal>>::into(input)
+}
+
 
 struct RPState {
     registers: HashMap<String, Value>,
@@ -99,6 +118,7 @@ struct RPState {
     reg_command: String,
     wip_str: String,
     eat_count: u32,
+    is_num_negative: bool,
     num: Decimal,
     decimal_offset: Decimal
 }
@@ -134,7 +154,7 @@ fn command_str(c: char, state: &mut RPState) -> Result<(), Exit> {
                             return eval(&eval_body, state);
                         }
                         _ => {
-                    return Err(err_msg(format!("Unable to execute ({}) as a named word", word)))
+                            return Err(err_msg(format!("Unable to execute ({}) as a named word", word)))
                         }
                     }
                     
@@ -155,6 +175,11 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.num = dec!(0);
         state.num += to_decimal(c.to_digit(10).ok_or_else(|| err_msg(format!("{} isn't a digit", c)))?);
         Ok(())
+    }  else if c == '_' {
+        state.mode = Mode::Integer;
+        state.num = dec!(0);
+        state.is_num_negative = true;
+        Ok(())
     } else if c == ' ' {
         // do nothing
         Ok(())
@@ -169,8 +194,22 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.eat_count = 0;
         Ok(())
     }
-    else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c' = c {
+    else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c' | '!' = c {
         match c {
+            '!' => {
+                if state.stack.is_empty() { 
+                    return Err(err_msg("Data underflow!".into()));
+                }
+                match state.stack.pop() {
+                    Some(Value::Num(d)) => {
+                        if usize_to_decimal(state.stack.len()) < d {
+                            return Err(err_msg(format!("Stack depth should be at least: {}", d)));
+                        }
+                    }
+                    Some(Value::Str(_)) => return Err(err_msg("Cannot assert a string as a stack depth".into())),
+                    None => return Err(err_msg("Data underflow!".into()))
+                }
+            },
             'q' => return Err(Exit::Quit),
             'c' => state.stack.clear(),
             'l' => {
@@ -280,6 +319,17 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
     }
 }
 
+fn finish_num(c: char, state: &mut RPState) -> Result<(), Exit> {
+    // print!("finishing number, negative? {}", state.is_num_negative);
+    if state.is_num_negative {
+        state.num *= dec!(-1);
+    }
+    state.stack.push(Value::Num(state.num));
+    state.mode = Mode::CommandChar;
+    state.is_num_negative = false;
+    command_char(c, state)
+}
+
 fn integer(c: char, state: &mut RPState) -> Result<(), Exit> {
     if c.is_digit(RADIX) {
         state.num *= INTEGER_RADIX;
@@ -287,11 +337,10 @@ fn integer(c: char, state: &mut RPState) -> Result<(), Exit> {
     } else if c == '.' {
         state.decimal_offset = dec!(1);
         state.mode = Mode::Decimal;
-    }
-    else {
-        state.stack.push(Value::Num(state.num));
-        state.mode = Mode::CommandChar;
-        return command_char(c, state);
+    } else if c == '_' {
+        state.is_num_negative = true;
+    } else {
+        return finish_num(c, state);
     }
     return Ok(());
 }
@@ -301,9 +350,7 @@ fn decimal(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.decimal_offset *= dec!(0.1);
         state.num += to_decimal(c.to_digit(10).unwrap()) * state.decimal_offset;
     } else {
-        state.stack.push(Value::Num(state.num));
-        state.mode = Mode::CommandChar;
-        return command_char(c, state);
+        return finish_num(c, state)
     }
     return Ok(());
 }
@@ -399,8 +446,7 @@ fn eval(input: &str, state: &mut RPState) -> Result<(), Exit> {
     }
     match state.mode {
         Mode::Integer | Mode::Decimal => { 
-            state.stack.push(Value::Num(state.num));
-            state.mode = Mode::CommandChar;
+            return finish_num(' ', state)
         },
         _ => {}
     };

@@ -7,8 +7,45 @@ use rust_decimal_macros::dec;
 
 use num_traits::pow::Pow;
 
-
 mod tests;
+
+
+const HELP_TEXT: &str =
+    "LITERALS\n\
+     0-9     integers\n\
+     _       toggle sign (or, as a command, negate the top item on the stack)\n\
+     [...]   string\n\
+     (...)   named command (see below)\n\
+     \n\
+     ARITHMETIC OPERATIONS\n\
+     +       add the top two items on the stack\n\
+     -       subtract the top item on the stack from the second item\n\
+     *       multiply the top two items on the stack\n\
+     /       divide the second item on the stack by the top item\n\
+     %       take the modulus of the second item by the base of the top item\n\
+     ^       raise the second item to the power of the top item\n\
+     v       take the square root of the top item on the stack\n\
+     \n\
+     STACK OPERATIONS\n\
+     d       duplicate the top item on the stack\n\
+     c       clear the stack\n\
+     ,       drop the top item from the stack\n\
+     !       something semi-implemented\n\
+     \n\
+     REGISTER OPERATIONS\n\
+     l       load from register (register name as next character)\n\
+     s       store to register (register name as next character)\n\
+     \n\
+     CONTROL FLOW\n\
+     x       evaluate string\n\
+     \n\
+     META\n\
+     p       print the top item of the stack, leaving it in place\n\
+     n       print the top item of the stack, popping it\n\
+     q       quit (you can also ^D)\n\
+     ?       help (this message)\n\
+     \n\
+     Good luck!\n\n";
 
 #[derive(Debug,PartialEq,Eq,Clone)]
 enum Value {
@@ -194,8 +231,11 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.eat_count = 0;
         Ok(())
     }
-    else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c' | '!' = c {
+    else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c' | '!' | '?' = c {
         match c {
+            '?' => {
+                print!("{}", HELP_TEXT);
+            },
             '!' => {
                 if state.stack.is_empty() { 
                     return Err(err_msg("Data underflow!".into()));

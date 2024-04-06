@@ -62,12 +62,14 @@ impl fmt::Display for Value {
     }
 }
 
+
 fn print_value(v: &Value) {
     match v {
         Value::Str(s) => print!("{}", s),
         Value::Num(d) => print!("{}", d),
     }
 }
+
 
 #[derive(Debug)]
 enum Mode {
@@ -80,17 +82,20 @@ enum Mode {
     RegisterStr,
 }
 
+
 #[derive(Debug)]
 enum Exit {
     WithMessage(String),
     Quit,
 }
 
+
 fn err_msg(msg: String) -> Exit {
     Exit::WithMessage(msg)
 }
 
-fn baseline_regsiters() -> HashMap<String, Value> {
+
+fn baseline_registers() -> HashMap<String, Value> {
     let kvs = [
         ("F->C", "1! 32- 5 9/*"),
         ("C->F", "1! 9 5/* 32+"),
@@ -105,13 +110,13 @@ fn baseline_regsiters() -> HashMap<String, Value> {
 
 fn main() {
     let mut state = RPState {
-        registers: baseline_regsiters(),
+        registers: baseline_registers(),
         stack: Vec::new(),
         mode: Mode::CommandChar,
         wip_str: String::from(""),
         // TODO: I don't think we need a return stack
         // But this the closest thing we have right now
-        reg_command: String::from(""), 
+        reg_command: String::from(""),
         eat_count: 0,
         num: dec!(0.0),
         is_num_negative: false,
@@ -175,13 +180,13 @@ fn command_str(c: char, state: &mut RPState) -> Result<(), Exit> {
     } else if c == ')' {
         match state.wip_str.as_str() {
             // TODO:
-            // (times) 
+            // (times)
             // (while)
-            // (?) -- (cond ifTrue ifFalse) 
+            // (?) -- (cond ifTrue ifFalse)
             // [(?)x]s[if-else]
             // [[\](?)x]s[if]
             // (r?) -- show contents of registers
-            // Scope out  
+            // Scope out
             word => {
                 if state.registers.contains_key(word) {
                     match &state.registers[word].clone() {
@@ -191,26 +196,29 @@ fn command_str(c: char, state: &mut RPState) -> Result<(), Exit> {
                             return eval(&eval_body, state);
                         }
                         _ => {
-                            return Err(err_msg(format!("Unable to execute ({}) as a named word", word)))
+                            return Err(err_msg(format!(
+                                "Unable to execute ({}) as a named word",
+                                word)))
                         }
                     }
-                    
                 } else {
-                    return Err(err_msg(format!("Unable to execute ({}) as a named word", word)))
+                    return Err(err_msg(format!(
+                        "Unable to execute ({}) as a named word", word)))
                 }
             }
 
         }
     }
-    
+
     Ok(())
 }
 
-fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> { 
+fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
     if c.is_digit(RADIX) {
         state.mode = Mode::Integer;
         state.num = dec!(0);
-        state.num += to_decimal(c.to_digit(10).ok_or_else(|| err_msg(format!("{} isn't a digit", c)))?);
+        state.num += to_decimal(c.to_digit(10)
+            .ok_or_else(|| err_msg(format!("{} isn't a digit", c)))?);
         Ok(())
     }  else if c == '_' {
         state.mode = Mode::Integer;
@@ -230,23 +238,26 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.wip_str.clear();
         state.eat_count = 0;
         Ok(())
-    }
-    else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c' | '!' | '?' = c {
+    } else if let 'p' | 'n' | 'q' | 'l' | 's' | 'v' | 'x' | 'd' | ',' | 'c'
+                | '!' | '?' = c
+    {
         match c {
             '?' => {
                 print!("{}", HELP_TEXT);
             },
             '!' => {
-                if state.stack.is_empty() { 
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 match state.stack.pop() {
                     Some(Value::Num(d)) => {
                         if usize_to_decimal(state.stack.len()) < d {
-                            return Err(err_msg(format!("Stack depth should be at least: {}", d)));
+                            return Err(err_msg(format!(
+                                "Stack depth should be at least: {}", d)));
                         }
                     }
-                    Some(Value::Str(_)) => return Err(err_msg("Cannot assert a string as a stack depth".into())),
+                    Some(Value::Str(_)) => return Err(err_msg(
+                        "Cannot assert a string as a stack depth".into())),
                     None => return Err(err_msg("Data underflow!".into()))
                 }
             },
@@ -257,10 +268,10 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
                 state.mode = Mode::RegisterChar;
             }
             'x' => {
-                if state.stack.is_empty() { 
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
-                match state.stack.pop() { 
+                match state.stack.pop() {
                     Some(Value::Str(s)) => {
                         return eval(&s, state)
                     }
@@ -271,58 +282,61 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
                         return Err(err_msg("Data underflow!".into()));
                     }
                 }
-                
             }
             's' => {
                 state.reg_command = "s".into();
                 state.mode = Mode::RegisterChar;
             }
             'd' => {
-                if state.stack.is_empty() { 
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 let val = state.stack.pop().unwrap();
                 state.stack.push(val.clone());
                 state.stack.push(val.clone());
             }
-            ',' => { 
-                if state.stack.is_empty() { 
+            ',' => {
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 state.stack.pop();
             }
             'v' => {
-                if state.stack.is_empty() { 
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 match state.stack.pop() {
-                    Some(Value::Num(d)) => { 
+                    Some(Value::Num(d)) => {
                         match d.sqrt() {
                             Some(n) => state.stack.push(Value::Num(n)),
-                            None => return Err(err_msg("Error attempting square root!".into())),
+                            None => return Err(err_msg(
+                                "Error attempting square root!".into())),
                         }
                     }
                     Some(v) => {
-                        return Err(err_msg(format!("Invalid attempt to sqrt {}", v)));
+                        return Err(err_msg(format!(
+                            "Invalid attempt to sqrt {}", v)));
                     }
                     None => {
-                        return Err(err_msg("Impossible data underflow!".into()));
+                        return Err(err_msg(
+                            "Impossible data underflow!".into()));
                     }
                 }
             }
             'p' =>  {
-                if state.stack.is_empty() { 
+                if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 print_value(state.stack.last().unwrap());
             },
-            'n' => { 
+            'n' => {
                 if state.stack.is_empty() {
                     return Err(err_msg("Data underflow!".into()));
                 }
                 print_value(&state.stack.pop().unwrap());
             },
-            _ => return Err(err_msg(format!("{} is unimplemented, this shouldn't be reachable!", c))),
+            _ => return Err(err_msg(format!(
+                  "{} is unimplemented, this shouldn't be reachable!", c))),
         }
         Ok(())
 
@@ -331,11 +345,13 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
             return Err(err_msg("Data underflow!".into()));
         }
 
-        let a = state.stack.pop().ok_or_else(|| err_msg("Data underflow!".into()))?;
-        let b = state.stack.pop().ok_or_else(|| err_msg("Data underflow!".into()))?;
+        let a = state.stack.pop().ok_or_else(|| err_msg(
+            "Data underflow!".into()))?;
+        let b = state.stack.pop().ok_or_else(|| err_msg(
+            "Data underflow!".into()))?;
 
         match (&a, &b) {
-            (Value::Num(ia), Value::Num(ib)) => { 
+            (Value::Num(ia), Value::Num(ib)) => {
                 let value = match c {
                     '+' => Some(*ib + *ia),
                     '-' => Some(*ib - *ia),
@@ -347,10 +363,11 @@ fn command_char(c: char, state: &mut RPState) -> Result<(), Exit> {
                 }.ok_or_else(|| err_msg("This should never happen".into()))?;
                 state.stack.push(Value::Num(value));
             }
-            _ =>  { 
+            _ =>  {
                 state.stack.push(b);
                 state.stack.push(a);
-                return Err(err_msg(format!("Invalid operation {} on non-numbers!", c)))
+                return Err(err_msg(format!(
+                    "Invalid operation {} on non-numbers!", c)))
             }
         }
         Ok(())
@@ -388,7 +405,8 @@ fn integer(c: char, state: &mut RPState) -> Result<(), Exit> {
 fn decimal(c: char, state: &mut RPState) -> Result<(), Exit> {
     if c.is_digit(RADIX) {
         state.decimal_offset *= dec!(0.1);
-        state.num += to_decimal(c.to_digit(10).unwrap()) * state.decimal_offset;
+        state.num += to_decimal(c.to_digit(10).unwrap())
+                     * state.decimal_offset;
     } else {
         return finish_num(c, state)
     }
@@ -407,7 +425,7 @@ fn string(c: char, state: &mut RPState) -> Result<(), Exit> {
         state.mode = Mode::CommandChar;
         state.stack.push(Value::Str(state.wip_str.clone()));
         state.wip_str.clear();
-    } else { 
+    } else {
         return Err(err_msg("Should Not Get Here!".into()))
     }
     Ok(())
@@ -418,24 +436,27 @@ fn register_str(c: char, state: &mut RPState) -> Result<(), Exit> {
         (']', "l")  => {
             if state.registers.contains_key(&state.wip_str) {
                 state.stack.push(state.registers[&state.wip_str].clone());
-            } 
+            }
             state.wip_str.clear();
             state.mode = Mode::CommandChar;
         }
         (']', "s")  => {
             if state.stack.is_empty() {
-                return Err(err_msg(format!("Data underflow attempting to store to register {}", c)));
+                return Err(err_msg(format!(
+                    "Data underflow attempting to store to register {}", c)));
             }
-            state.registers.insert(state.wip_str.clone(), state.stack.pop().unwrap());
+            state.registers.insert(state.wip_str.clone(),
+                                   state.stack.pop().unwrap());
             state.wip_str.clear();
             state.mode = Mode::CommandChar;
         }
         (_, "l"|"s") => {
             state.wip_str.push(c)
         }
-        _ => { 
+        _ => {
             state.mode = Mode::CommandChar;
-            return Err(err_msg(format!("Unsupported register command {}", state.reg_command))); 
+            return Err(err_msg(format!(
+                "Unsupported register command {}", state.reg_command)));
         }
     }
     Ok(())
@@ -449,22 +470,25 @@ fn register_char(c: char, state: &mut RPState) -> Result<(), Exit> {
         }
         ("s", c) => {
             if state.stack.is_empty() {
-                return Err(err_msg(format!("Data underflow attempting to store to register {}", c)));
+                return Err(err_msg(format!(
+                    "Data underflow attempting to store to register {}", c)));
             }
-            state.registers.insert(String::from(c), state.stack.pop().unwrap());
+            state.registers.insert(String::from(c),
+                                   state.stack.pop().unwrap());
             state.mode = Mode::CommandChar;
             Ok(())
         }
         ("l", c) => {
             if state.registers.contains_key(&String::from(c)) {
                 state.stack.push(state.registers[&String::from(c)].clone());
-            } 
+            }
             state.mode = Mode::CommandChar;
             Ok(())
         }
         _ => {
             state.mode = Mode::CommandChar;
-            return Err(err_msg(format!("Unsupported register command {}", state.reg_command)));
+            return Err(err_msg(format!(
+                "Unsupported register command {}", state.reg_command)));
         }
     }
 }
@@ -485,7 +509,7 @@ fn eval(input: &str, state: &mut RPState) -> Result<(), Exit> {
         }
     }
     match state.mode {
-        Mode::Integer | Mode::Decimal => { 
+        Mode::Integer | Mode::Decimal => {
             return finish_num(' ', state)
         },
         _ => {}

@@ -1,11 +1,11 @@
+use num_traits::pow::Pow;
+use std::collections::{ BTreeMap, HashMap };
 // use std::env; // TODO: Get args from here
-use std::io::{self, BufRead};
-use std::collections::HashMap;
+use std::io::{ self, BufRead };
 use std::fmt;
+use std::rc::Rc;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-
-use num_traits::pow::Pow;
 
 mod tests;
 
@@ -71,7 +71,7 @@ fn print_value(v: &Value) {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Mode {
   Integer,
   Decimal,
@@ -113,6 +113,9 @@ fn main() {
     registers: baseline_registers(),
     stack: Vec::new(),
     mode: Mode::CommandChar,
+    readtables: BTreeMap::from([
+      (Mode::Integer, make_integer_readtable()),
+    ]),
     wip_str: String::from(""),
     // TODO: I don't think we need a return stack
     // But this the closest thing we have right now
@@ -154,10 +157,19 @@ fn usize_to_decimal(input: usize) -> Decimal {
 }
 
 
+type ReadAction = Rc<dyn Fn(char, &mut RPState) -> Result<(), Exit>>;
+
+struct ReadTable {
+  action_map: BTreeMap<char, ReadAction>,
+  default_action: ReadAction,
+}
+
+
 struct RPState {
   registers: HashMap<String, Value>,
   stack: Vec<Value>,
   mode: Mode,
+  readtables: BTreeMap<Mode, ReadTable>,
   reg_command: String,
   wip_str: String,
   eat_count: u32,
@@ -389,19 +401,42 @@ fn finish_num(c: char, state: &mut RPState) -> Result<(), Exit> {
 }
 
 
-fn integer(c: char, state: &mut RPState) -> Result<(), Exit> {
-  if c.is_digit(RADIX) {
-    state.num *= INTEGER_RADIX;
-    state.num += to_decimal(c.to_digit(10).unwrap());
-  } else if c == '.' {
-    state.decimal_offset = dec!(1);
-    state.mode = Mode::Decimal;
-  } else if c == '_' {
-    state.is_num_negative = true;
-  } else {
-    return finish_num(c, state);
+fn make_integer_readtable() -> ReadTable {
+  let mut items: Vec<(char, ReadAction)> = vec![
+    ('.', Rc::new(move |_, state| {
+      state.decimal_offset = dec!(1);
+      state.mode = Mode::Decimal;
+
+      Ok(())
+    })),
+    ('_', Rc::new(move |_, state| {
+      state.is_num_negative = true;
+
+      Ok(())
+    })),
+  ];
+
+  let handle_digit = move |c: char, state: &mut RPState| {
+    if c.is_digit(RADIX) {
+      state.num *= INTEGER_RADIX;
+      state.num += to_decimal(c.to_digit(10).unwrap());
+    }
+
+    Ok(())
+  };
+
+  for range in ['0' ..= '9', 'a' ..= 'z', 'A' ..= 'Z'] {
+    for c in range {
+      if c.is_digit(RADIX) {
+        items.push((c, Rc::new(handle_digit.clone())));
+      }
+    }
   }
-  return Ok(());
+
+  ReadTable {
+    action_map: BTreeMap::from_iter(items.into_iter()),
+    default_action: Rc::new(finish_num),
+  }
 }
 
 
@@ -503,15 +538,34 @@ fn register_char(c: char, state: &mut RPState) -> Result<(), Exit> {
 
 fn eval(input: &str, state: &mut RPState) -> Result<(), Exit> {
   for (_cpos, c) in input.char_indices() {
-    match state.mode {
-      Mode::CommandChar => command_char(c, state),
-      Mode::CommandNamed => command_str(c, state),
-      Mode::Integer => integer(c, state),
-      Mode::Decimal => decimal(c, state),
-      Mode::Str => string(c, state),
-      Mode::RegisterChar => register_char(c, state),
-      Mode::RegisterStr => register_str(c, state),
-    }?;
+    // TODO eventually this slightly weird logic will go away because
+    // everything will be in a readtable
+    let action = {
+      if let Some(readtable) = state.readtables.get_mut(&state.mode) {
+        if let Some(action) = readtable.action_map.get_mut(&c) {
+          Some(Rc::clone(&action))
+        } else {
+          Some(Rc::clone(&readtable.default_action))
+        }
+      } else {
+        None
+      }
+    };
+
+    if let Some(action) = action {
+      action(c, state)?;
+    } else {
+      match state.mode {
+        Mode::CommandChar => command_char(c, state),
+        Mode::CommandNamed => command_str(c, state),
+        Mode::Decimal => decimal(c, state),
+        Mode::Str => string(c, state),
+        Mode::RegisterChar => register_char(c, state),
+        Mode::RegisterStr => register_str(c, state),
+        _ => return Err(err_msg(
+            "Mode has neither readtable nor hardcoded case".to_string())),
+      }?;
+    }
   }
   match state.mode {
     Mode::Integer | Mode::Decimal => {

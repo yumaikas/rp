@@ -503,7 +503,7 @@ fn register_char(c: char, state: &mut RPState) -> Result<(), Exit> {
 
 fn eval(input: &str, state: &mut RPState) -> Result<(), Exit> {
   for (_cpos, c) in input.char_indices() {
-    let res = match state.mode {
+    match state.mode {
       Mode::CommandChar => command_char(c, state),
       Mode::CommandNamed => command_str(c, state),
       Mode::Integer => integer(c, state),
@@ -511,18 +511,15 @@ fn eval(input: &str, state: &mut RPState) -> Result<(), Exit> {
       Mode::Str => string(c, state),
       Mode::RegisterChar => register_char(c, state),
       Mode::RegisterStr => register_str(c, state),
-    };
-    if res.is_err() {
-      return res
-    }
+    }?;
   }
   match state.mode {
     Mode::Integer | Mode::Decimal => {
       return finish_num(' ', state)
     },
-    _ => {}
+    _ => { }
   };
 
-  return Ok(());
+  Ok(())
 }
 
